@@ -2,9 +2,10 @@ import Link from "next/link";
 import { listRetros, getSnapshot } from "@/lib/store";
 import { redirect } from "next/navigation";
 
-export default function HomePage() {
+export default async function HomePage() {
   const now = Date.now();
-  const snapshots = listRetros().map((r) => getSnapshot(r.id, now)!);
+  const retros = await listRetros();
+  const snapshots = (await Promise.all(retros.map((r) => getSnapshot(r.id, now)))).filter(Boolean) as any[];
 
   return (
     <div className="flex flex-col gap-6">
@@ -54,7 +55,7 @@ function EnterExisting() {
         const name = String(formData.get("name") || "").toLowerCase();
         const personName = String(formData.get("personName") || "").trim();
         const { getRetroIdByName } = await import("@/lib/store");
-        const id = getRetroIdByName(name);
+        const id = await getRetroIdByName(name);
         if (!id) {
           redirect(`/?missing=1`);
         }
@@ -97,7 +98,7 @@ function CreateNew() {
         const name = String(formData.get("name") || "");
         const personName = String(formData.get("personName") || "").trim();
         const { createRetro } = await import("@/lib/store");
-        const retro = createRetro({ team, dateISO, name: name || undefined });
+        const retro = await createRetro({ team, dateISO, name: name || undefined });
         const u = encodeURIComponent(personName);
         redirect(`/retro/${retro.id}?u=${u}`);
       }}
