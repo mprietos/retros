@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (req.method === "GET") {
-        const snapshot = getSnapshot(retroId);
+        const snapshot = await getSnapshot(retroId);
         if (!snapshot) {
             return res.status(404).json({ error: "Retro not found" });
         }
@@ -28,23 +28,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         switch (action) {
             case "startRetro":
-                startRetro(retroId, payload.durationMinutes, payload.starterUserId);
-                snapshot = getSnapshot(retroId);
+                await startRetro(retroId, payload.durationMinutes, payload.starterUserId);
+                snapshot = await getSnapshot(retroId);
                 break;
 
             case "addNote":
-                addNote(payload);
-                snapshot = getSnapshot(retroId);
+                await addNote(payload);
+                snapshot = await getSnapshot(retroId);
                 break;
 
             case "toggleVote":
-                const result = toggleVote({
+                const result = await toggleVote({
                     retroId,
                     noteId: payload.noteId,
                     userId: payload.userId
                 });
                 if (result.ok) {
-                    snapshot = getSnapshot(retroId);
+                    snapshot = await getSnapshot(retroId);
                 } else {
                     error = result.reason;
                 }
