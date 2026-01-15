@@ -3,14 +3,14 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ColumnKey, RetroSnapshot, Note } from "@/lib/types";
 import Timer from "@/components/Timer";
 import NoteCard from "@/components/NoteCard";
-import { getSocket } from "@/lib/socketClient";
+import { getPusherClient } from "@/lib/pusher";
 import TenorGifPicker from "@/components/TenorGifPicker";
 // simple id generator for client
 function generateId(): string {
   try {
     const c = (globalThis as unknown as { crypto?: { randomUUID?: () => string } }).crypto;
     if (c?.randomUUID) return c.randomUUID();
-  } catch {}
+  } catch { }
   return Math.random().toString(36).slice(2);
 }
 
@@ -52,28 +52,69 @@ export default function RetroBoard({ initial }: Props) {
         localStorage.setItem(nameKey, u.trim());
         setUserName(u.trim());
       }
-    } catch {}
+    } catch { }
   }, []);
 
-  // socket join and listeners
+  // timer for UI updates
+  const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
-    const socket = getSocket();
-    socket.emit("join", { retroId: snapshot.retro.id });
-    const onState = (s: RetroSnapshot) => setSnapshot(s);
-    socket.on("state", onState);
+    const i = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(i);
+  }, []);
+
+  // pusher subscription
+  useEffect(() => {
+    const pusher = getPusherClient();
+    if (!pusher) return;
+
+    const channel = pusher.subscribe(snapshot.retro.id);
+    channel.bind("state", (s: RetroSnapshot) => {
+      setSnapshot(s);
+    });
+
     return () => {
-      socket.off("state", onState);
+      channel.unbind("state");
+      pusher.unsubscribe(snapshot.retro.id);
     };
   }, [snapshot.retro.id]);
 
-  const canAddToIdeas = snapshot.phase === "ideas";
-  const canVote = snapshot.phase === "voting";
-  const showBlur = snapshot.phase === "writing";
+  // DERIVE PHASE LOCALLY
+  const currentPhase = useMemo(() => {
+    // If we have a server snapshot that says "ideas" (time ended), respect it?
+    // Actually, trust the local calculation based on startTime/duration for immediate updates.
+    // If not started, use server phase (planning)
+    if (!snapshot.retro.startTime || !snapshot.retro.durationMinutes) {
+      return "planning";
+    }
+    const endTime = snapshot.retro.startTime + snapshot.retro.durationMinutes * 60_000;
+    const remainingMs = endTime - now;
+
+    // < 0 => ideas
+    if (remainingMs <= 0) return "ideas";
+    // <= 5 min => voting
+    if (remainingMs <= 5 * 60_000) return "voting";
+    // else => writing
+    return "writing";
+  }, [snapshot.retro.startTime, snapshot.retro.durationMinutes, now]);
+
+  const canAddToIdeas = currentPhase === "ideas";
+  const canVote = currentPhase === "voting";
+  const showBlur = currentPhase === "writing";
+
+  const postAction = async (action: string, payload: any) => {
+    try {
+      await fetch(`/api/pusher/event?retroId=${snapshot.retro.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...payload })
+      });
+    } catch (e) {
+      console.error("Error posting action", e);
+    }
+  };
 
   const handleStart = useCallback(() => {
-    const socket = getSocket();
-    socket.emit("startRetro", {
-      retroId: snapshot.retro.id,
+    postAction("startRetro", {
       durationMinutes: duration,
       starterUserId: userId
     });
@@ -83,9 +124,7 @@ export default function RetroBoard({ initial }: Props) {
     (column: ColumnKey, text: string) => {
       const t = text.trim();
       if (!t) return;
-      const socket = getSocket();
-      socket.emit("addNote", {
-        retroId: snapshot.retro.id,
+      postAction("addNote", {
         column,
         text: t,
         authorId: userId,
@@ -97,9 +136,7 @@ export default function RetroBoard({ initial }: Props) {
 
   const handleVote = useCallback(
     (noteId: string) => {
-      const socket = getSocket();
-      socket.emit("toggleVote", {
-        retroId: snapshot.retro.id,
+      postAction("toggleVote", {
         noteId,
         userId
       });
@@ -273,8 +310,8 @@ function Column({
           color === "good"
             ? "text-lg font-semibold text-good"
             : color === "bad"
-            ? "text-lg font-semibold text-bad"
-            : "text-lg font-semibold text-idea"
+              ? "text-lg font-semibold text-bad"
+              : "text-lg font-semibold text-idea"
         }
       >
         {title}
