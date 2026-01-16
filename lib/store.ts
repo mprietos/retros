@@ -6,9 +6,13 @@ const MAX_VOTES_PER_USER = 6;
 
 // KV Client
 // Ensure environment variables KV_REST_API_URL and KV_REST_API_TOKEN are set
+if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+  throw new Error("Missing Vercel KV environment variables (KV_REST_API_URL, KV_REST_API_TOKEN). Check your .env.local or Vercel project settings.");
+}
+
 const kv = createClient({
-  url: process.env.KV_REST_API_URL!,
-  token: process.env.KV_REST_API_TOKEN!,
+  url: process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN,
 });
 
 export async function listRetros(): Promise<Retro[]> {
