@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { pusherServer } from "@/lib/pusher";
-import { addNote, getSnapshot, startRetro, toggleVote } from "@/lib/store";
+import { addNote, getSnapshot, startRetro, toggleVote, joinRetro } from "@/lib/store";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { retroId } = req.query;
@@ -47,6 +47,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     snapshot = await getSnapshot(retroId);
                 } else {
                     error = result.reason;
+                }
+                break;
+
+            case "joinRetro":
+                const joinRes = await joinRetro(retroId, payload.userProfile);
+                if (joinRes.ok) {
+                    snapshot = await getSnapshot(retroId);
+                } else {
+                    error = joinRes.reason;
                 }
                 break;
 
