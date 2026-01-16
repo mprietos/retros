@@ -2,6 +2,8 @@ import Link from "next/link";
 import { listRetros, getSnapshot } from "@/lib/store";
 import { redirect } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   const now = Date.now();
   const retros = await listRetros();

@@ -3,12 +3,11 @@ import { createRetro, listRetros, getSnapshot } from "@/lib/store";
 import { z } from "zod";
 
 export async function GET() {
-  const retros = listRetros();
+  const retros = await listRetros();
   const now = Date.now();
-  const snapshots = retros.map((r) => getSnapshot(r.id, now));
+  const snapshots = (await Promise.all(retros.map((r) => getSnapshot(r.id, now)))).filter(Boolean) as any[];
   return NextResponse.json(
     snapshots
-      .filter(Boolean)
       .map((s) => ({
         id: s!.retro.id,
         name: s!.retro.name,
@@ -32,7 +31,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
-  const retro = createRetro(parsed.data);
+  const retro = await createRetro(parsed.data);
   return NextResponse.json({ id: retro.id, name: retro.name }, { status: 201 });
 }
 
