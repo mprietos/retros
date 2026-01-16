@@ -57,7 +57,9 @@ export async function createRetro(params: { name?: string; team: string; dateISO
     startTime: null,
     starterUserId: null,
     notes: [],
-    userVotes: {}
+
+    userVotes: {},
+    users: {}
   };
 
   await kv.hset("retros", { [id]: retro });
@@ -118,6 +120,23 @@ export async function toggleVote(params: { retroId: string; noteId: string; user
     retro.userVotes[params.userId] = [...votes, params.noteId];
   }
 
+  await kv.hset("retros", { [retro.id]: retro });
+  return { ok: true };
+}
+
+export async function joinRetro(retroId: string, profile: { id: string; name: string; avatar: string }): Promise<{ ok: boolean; reason?: string }> {
+  const retro = await getRetroById(retroId);
+  if (!retro) return { ok: false, reason: "NOT_FOUND" };
+
+  if (!retro.users) retro.users = {}; // migrate legacy if needed
+
+  // Check if avatar is taken by another user
+  const taken = Object.values(retro.users).find(u => u.avatar === profile.avatar && u.id !== profile.id);
+  if (taken) {
+    return { ok: false, reason: "AVATAR_TAKEN" };
+  }
+
+  retro.users[profile.id] = profile;
   await kv.hset("retros", { [retro.id]: retro });
   return { ok: true };
 }

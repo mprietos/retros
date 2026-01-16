@@ -10,6 +10,12 @@ export interface Note {
   createdAt: number;
 }
 
+export interface UserProfile {
+  id: string;
+  name: string;
+  avatar: string; // emoji character
+}
+
 export interface Retro {
   id: string;
   name: string;
@@ -21,6 +27,7 @@ export interface Retro {
   starterUserId: string | null;
   notes: Note[];
   userVotes: Record<string, string[]>; // userId -> noteIds
+  users: Record<string, UserProfile>; // userId -> UserProfile
 }
 
 export type Phase = "planning" | "writing" | "voting" | "ideas";

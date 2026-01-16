@@ -65,14 +65,12 @@ function EnterExisting() {
       action={async (formData) => {
         "use server";
         const name = String(formData.get("name") || "").toLowerCase();
-        const personName = String(formData.get("personName") || "").trim();
         const { getRetroIdByName } = await import("@/lib/store");
         const id = await getRetroIdByName(name);
         if (!id) {
           redirect(`/?missing=1`);
         }
-        const u = encodeURIComponent(personName);
-        redirect(`/retro/${id}?u=${u}`);
+        redirect(`/retro/${id}`);
       }}
       className="flex flex-col gap-2 rounded-lg bg-white p-4 shadow"
     >
@@ -85,14 +83,7 @@ function EnterExisting() {
         placeholder="ej: equipo-2025-11-17"
         className="rounded border border-gray-300 px-3 py-2"
       />
-      <label className="text-sm text-gray-700" htmlFor="personNameEnter">Tu nombre</label>
-      <input
-        required
-        id="personNameEnter"
-        name="personName"
-        placeholder="Tu nombre y/o apodo"
-        className="rounded border border-gray-300 px-3 py-2"
-      />
+
       <button type="submit" className="mt-2 w-fit rounded bg-gray-900 px-3 py-2 text-white">
         Entrar
       </button>
@@ -108,11 +99,9 @@ function CreateNew() {
         const team = String(formData.get("team") || "");
         const dateISO = String(formData.get("dateISO") || "");
         const name = String(formData.get("name") || "");
-        const personName = String(formData.get("personName") || "").trim();
         const { createRetro } = await import("@/lib/store");
         const retro = await createRetro({ team, dateISO, name: name || undefined });
-        const u = encodeURIComponent(personName);
-        redirect(`/retro/${retro.id}?u=${u}`);
+        redirect(`/retro/${retro.id}`);
       }}
       className="flex flex-col gap-2 rounded-lg bg-white p-4 shadow"
     >
@@ -123,14 +112,7 @@ function CreateNew() {
       <input id="dateISO" required type="date" name="dateISO" className="rounded border border-gray-300 px-3 py-2" />
       <label className="text-sm text-gray-700" htmlFor="retroCustomName">Nombre (opcional)</label>
       <input id="retroCustomName" name="name" placeholder="Por defecto: equipo-fecha" className="rounded border border-gray-300 px-3 py-2" />
-      <label className="text-sm text-gray-700" htmlFor="personNameCreate">Tu nombre</label>
-      <input
-        id="personNameCreate"
-        required
-        name="personName"
-        placeholder="Tu nombre y/o apodo"
-        className="rounded border border-gray-300 px-3 py-2"
-      />
+
       <button type="submit" className="mt-2 w-fit rounded bg-green-600 px-3 py-2 text-white">
         Crear
       </button>

@@ -4,6 +4,7 @@ import { ColumnKey, RetroSnapshot, Note } from "@/lib/types";
 import Timer from "@/components/Timer";
 import NoteCard from "@/components/NoteCard";
 import { getPusherClient } from "@/lib/pusher";
+import { AVATAR_LIST } from "@/lib/avatars";
 import TenorGifPicker from "@/components/TenorGifPicker";
 // simple id generator for client
 function generateId(): string {
@@ -23,36 +24,33 @@ const DURATIONS = [10, 15, 20] as const;
 export default function RetroBoard({ initial }: Props) {
   const [snapshot, setSnapshot] = useState<RetroSnapshot>(initial);
   const [userId, setUserId] = useState<string>("");
-  const [userName, setUserName] = useState<string>("");
+  const [userProfile, setUserProfile] = useState<{ name: string; avatar: string } | null>(null);
   const [duration, setDuration] = useState<number>(15);
   const remainingVotes = useMemo(() => {
     const used = snapshot.retro.userVotes[userId]?.length ?? 0;
     return Math.max(0, 6 - used);
   }, [snapshot, userId]);
 
-  // user id persistence
+  // user persistence
   useEffect(() => {
     const key = "retro_user_id";
-    const existing = localStorage.getItem(key);
-    if (existing) {
-      setUserId(existing);
-    } else {
-      const created = generateId();
-      localStorage.setItem(key, created);
-      setUserId(created);
+    let storedId = localStorage.getItem(key);
+    if (!storedId) {
+      storedId = generateId();
+      localStorage.setItem(key, storedId);
     }
-    const nameKey = "retro_user_name";
-    const n = localStorage.getItem(nameKey);
-    if (n) setUserName(n);
-    // capture name from query string if present (?u=...)
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const u = sp.get("u");
-      if (u && u.trim()) {
-        localStorage.setItem(nameKey, u.trim());
-        setUserName(u.trim());
-      }
-    } catch { }
+    setUserId(storedId);
+
+    const profileKey = "retro_user_profile"; // stores JSON { name, avatar }
+    const storedProfile = localStorage.getItem(profileKey);
+    if (storedProfile) {
+      try {
+        const p = JSON.parse(storedProfile);
+        if (p.name && p.avatar) {
+          setUserProfile(p);
+        }
+      } catch { }
+    }
   }, []);
 
   // timer for UI updates
@@ -128,10 +126,10 @@ export default function RetroBoard({ initial }: Props) {
         column,
         text: t,
         authorId: userId,
-        authorName: userName || undefined
+        authorName: userProfile?.name || undefined
       });
     },
-    [snapshot.retro.id, userId, userName]
+    [snapshot.retro.id, userId, userProfile?.name]
   );
 
   const handleVote = useCallback(
@@ -160,13 +158,16 @@ export default function RetroBoard({ initial }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {!userName && (
-        <NameOverlay
-          onSave={(name) => {
-            const v = name.trim();
-            if (!v) return;
-            localStorage.setItem("retro_user_name", v);
-            setUserName(v);
+      {(!userProfile || !snapshot.retro.users?.[userId]) && (
+        <JoinModal
+          retroId={snapshot.retro.id}
+          userId={userId}
+          existingUsers={Object.values(snapshot.retro.users || {})}
+          onJoin={(profile) => {
+            setUserProfile(profile);
+            localStorage.setItem("retro_user_profile", JSON.stringify(profile));
+            // trigger server join
+            postAction("joinRetro", { userProfile: { ...profile, id: userId } });
           }}
         />
       )}
@@ -179,10 +180,28 @@ export default function RetroBoard({ initial }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="hidden md:flex items-center gap-2">
-              <span className="text-sm text-gray-600">Hola</span>
-              <span className="rounded bg-gray-100 px-2 py-1 text-sm font-medium">{userName || "anónimo"}</span>
+            {/* Connected Users */}
+            <div className="flex -space-x-2">
+              {Object.values(snapshot.retro.users || {}).map((u) => (
+                <div key={u.id} className="group relative">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white bg-gray-100 text-lg shadow-sm">
+                    {u.avatar}
+                  </div>
+                  <div className="absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 rounded bg-black px-2 py-1 text-xs text-white group-hover:block whitespace-nowrap z-10">
+                    {u.name}
+                  </div>
+                </div>
+              ))}
             </div>
+
+            <button
+              onClick={() => {
+                navigator.share ? navigator.share({ url: window.location.href }) : navigator.clipboard.writeText(window.location.href).then(() => alert("Link copiado!"));
+              }}
+              className="rounded bg-indigo-100 px-3 py-1 text-sm font-medium text-indigo-700 hover:bg-indigo-200"
+            >
+              Compartir
+            </button>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600">Duración</span>
               <select
@@ -231,7 +250,7 @@ export default function RetroBoard({ initial }: Props) {
           voteCounts={snapshot.voteCounts}
           showBlur={showBlur}
           userId={userId}
-          userName={userName}
+          userName={userProfile?.name || ""}
           canVote={canVote}
           canAdd
           onAdd={(text) => handleAddNote("good", text)}
@@ -244,7 +263,7 @@ export default function RetroBoard({ initial }: Props) {
           voteCounts={snapshot.voteCounts}
           showBlur={showBlur}
           userId={userId}
-          userName={userName}
+          userName={userProfile?.name || ""}
           canVote={canVote}
           canAdd
           onAdd={(text) => handleAddNote("bad", text)}
@@ -257,7 +276,7 @@ export default function RetroBoard({ initial }: Props) {
           voteCounts={snapshot.voteCounts}
           showBlur={false}
           userId={userId}
-          userName={userName}
+          userName={userProfile?.name || ""}
           canVote={false}
           canAdd={canAddToIdeas}
           addDisabledHint={!canAddToIdeas ? "Se habilita al terminar el tiempo" : undefined}
@@ -359,7 +378,7 @@ function Column({
             blurred={showBlur && n.authorId !== userId}
             votes={voteCounts[n.id] || 0}
             canVote={canVote}
-            authorName={n.authorName ?? (n.authorId === userId ? userName : "anónimo")}
+            authorName={n.authorName ?? (n.authorId === userId ? (userName || "yo") : "anónimo")}
             onVote={() => onVote(n.id)}
           />
         ))}
@@ -369,30 +388,87 @@ function Column({
   );
 }
 
-function NameOverlay({ onSave }: { onSave: (name: string) => void }) {
-  const [name, setName] = useState<string>("");
+function JoinModal({
+  retroId,
+  userId,
+  existingUsers,
+  onJoin
+}: {
+  retroId: string;
+  userId: string;
+  existingUsers: any[];
+  onJoin: (p: { name: string; avatar: string }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [selectedAvatar, setSelectedAvatar] = useState("");
+  const [error, setError] = useState("");
+
+  const takenAvatars = new Set(existingUsers.filter(u => u.id !== userId).map(u => u.avatar));
+
+  const handleJoin = async () => {
+    if (!name.trim() || !selectedAvatar) return;
+    // optimistic local check
+    if (takenAvatars.has(selectedAvatar)) {
+      setError("Este avatar ya está en uso, elige otro.");
+      return;
+    }
+    setError("");
+    onJoin({ name: name.trim(), avatar: selectedAvatar });
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-lg">
-        <h3 className="mb-2 text-lg font-semibold">Tu nombre</h3>
-        <p className="mb-3 text-sm text-gray-600">
-          Para entrar a la retro, indica tu nombre o apodo.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
+        <h3 className="mb-2 text-xl font-bold text-gray-900">Únete a la Retro</h3>
+        <p className="mb-6 text-sm text-gray-500">
+          Elige tu avatar y nombre para que el equipo te reconozca.
         </p>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Tu nombre"
-          className="mb-4 w-full rounded border border-gray-300 px-3 py-2"
-        />
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={() => onSave(name)}
-            disabled={!name.trim()}
-            className="rounded bg-blue-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
-          >
-            Entrar
-          </button>
+
+        <div className="mb-6">
+          <label className="mb-2 block text-sm font-medium text-gray-700">Elige un Avatar</label>
+          <div className="grid grid-cols-5 gap-3 sm:grid-cols-8">
+            {AVATAR_LIST.map((av) => {
+              const isTaken = takenAvatars.has(av.id);
+              const isSelected = selectedAvatar === av.id;
+              return (
+                <button
+                  key={av.id}
+                  onClick={() => !isTaken && setSelectedAvatar(av.id)}
+                  disabled={isTaken}
+                  className={`
+                    flex aspect-square items-center justify-center rounded-lg text-2xl transition-all
+                    ${isSelected ? "bg-blue-100 ring-2 ring-blue-500 scale-110" : "bg-gray-50 hover:bg-gray-100"}
+                    ${isTaken ? "cursor-not-allowed opacity-30 grayscale" : "cursor-pointer"}
+                  `}
+                  title={isTaken ? "Ya en uso" : av.label || "Seleccionar"}
+                >
+                  {av.id}
+                </button>
+              );
+            })}
+          </div>
         </div>
+
+        <div className="mb-6">
+          <label className="mb-2 block text-sm font-medium text-gray-700">Tu Nombre</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Ej: Miguel, Ana, ..."
+            className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+          />
+        </div>
+
+        {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
+        <button
+          onClick={handleJoin}
+          disabled={!name.trim() || !selectedAvatar}
+          className="w-full rounded-lg bg-black py-2.5 font-semibold text-white transition-colors hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
+        >
+          Entrar a la Retro
+        </button>
       </div>
     </div>
   );
