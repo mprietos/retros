@@ -5,48 +5,58 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const now = Date.now();
-  const retros = await listRetros();
-  const snapshots = (await Promise.all(retros.map((r) => getSnapshot(r.id, now)))).filter(Boolean) as any[];
+  try {
+    const now = Date.now();
+    const retros = await listRetros();
+    const snapshots = (await Promise.all(retros.map((r) => getSnapshot(r.id, now)))).filter(Boolean) as any[];
 
-  return (
-    <div className="flex flex-col gap-6">
-      <section className="rounded-lg bg-white p-4 shadow">
-        <h1 className="mb-2 text-2xl font-bold">Retros de Scrum</h1>
-        <p className="text-gray-600">Entra en una retro abierta por nombre o crea una nueva.</p>
-      </section>
+    return (
+      <div className="flex flex-col gap-6">
+        <section className="rounded-lg bg-white p-4 shadow">
+          <h1 className="mb-2 text-2xl font-bold">Retros de Scrum</h1>
+          <p className="text-gray-600">Entra en una retro abierta por nombre o crea una nueva.</p>
+        </section>
 
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <EnterExisting />
-        <CreateNew />
-      </section>
+        <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <EnterExisting />
+          <CreateNew />
+        </section>
 
-      <section className="rounded-lg bg-white p-4 shadow">
-        <h2 className="mb-3 text-lg font-semibold">Retros abiertas</h2>
-        <ul className="flex flex-col gap-2">
-          {snapshots.filter((s) => s.phase !== "ideas").map((s) => (
-            <li key={s.retro.id} className="flex items-center justify-between rounded border border-gray-200 p-3">
-              <div className="flex flex-col">
-                <span className="font-medium">{s.retro.name}</span>
-                <span className="text-sm text-gray-600">
-                  Equipo: {s.retro.team} • Fecha: {s.retro.dateISO} • Fase: <span className="capitalize">{s.phase}</span>
-                </span>
-              </div>
-              <Link
-                href={`/retro/${s.retro.id}`}
-                className="rounded bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700"
-              >
-                Entrar
-              </Link>
-            </li>
-          ))}
-          {snapshots.filter((s) => s.phase !== "ideas").length === 0 && (
-            <li className="text-sm text-gray-500">No hay retros abiertas.</li>
-          )}
-        </ul>
-      </section>
-    </div>
-  );
+        <section className="rounded-lg bg-white p-4 shadow">
+          <h2 className="mb-3 text-lg font-semibold">Retros abiertas</h2>
+          <ul className="flex flex-col gap-2">
+            {snapshots.filter((s) => s.phase !== "ideas").map((s) => (
+              <li key={s.retro.id} className="flex items-center justify-between rounded border border-gray-200 p-3">
+                <div className="flex flex-col">
+                  <span className="font-medium">{s.retro.name}</span>
+                  <span className="text-sm text-gray-600">
+                    Equipo: {s.retro.team} • Fecha: {s.retro.dateISO} • Fase: <span className="capitalize">{s.phase}</span>
+                  </span>
+                </div>
+                <Link
+                  href={`/retro/${s.retro.id}`}
+                  className="rounded bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700"
+                >
+                  Entrar
+                </Link>
+              </li>
+            ))}
+            {snapshots.filter((s) => s.phase !== "ideas").length === 0 && (
+              <li className="text-sm text-gray-500">No hay retros abiertas.</li>
+            )}
+          </ul>
+        </section>
+      </div>
+    );
+  } catch (error) {
+    console.error("Error in HomePage:", error);
+    return (
+      <div className="p-4 text-red-600">
+        <h1 className="text-xl font-bold">Error loading retros</h1>
+        <p>Check server logs for details.</p>
+      </div>
+    );
+  }
 }
 
 function EnterExisting() {
