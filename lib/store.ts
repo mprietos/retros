@@ -56,6 +56,8 @@ export async function createRetro(params: { name?: string; team: string; dateISO
     durationMinutes: null,
     startTime: null,
     starterUserId: null,
+    endTimeOverride: null,
+    revealComments: false,
     notes: [],
 
     userVotes: {},
@@ -74,9 +76,18 @@ export async function startRetro(id: string, durationMinutes: number, starterUse
   retro.startTime = Date.now();
   retro.durationMinutes = durationMinutes;
   retro.starterUserId = starterUserId;
+  retro.endTimeOverride = null;
+  retro.revealComments = retro.revealComments ?? false;
 
   await kv.hset("retros", { [id]: retro });
   return retro;
+}
+
+export async function deleteRetro(id: string): Promise<{ ok: boolean; reason?: string }> {
+  const retro = await getRetroById(id);
+  if (!retro) return { ok: false, reason: "NOT_FOUND" };
+  await kv.hdel("retros", id);
+  return { ok: true };
 }
 
 export async function addNote(params: {
@@ -104,6 +115,7 @@ export async function addNote(params: {
   return note;
 }
 
+// Vote is idempotent: voting again does NOT remove the vote.
 export async function toggleVote(params: { retroId: string; noteId: string; userId: string }): Promise<{ ok: boolean; reason?: string }> {
   const retro = await getRetroById(params.retroId);
   if (!retro) return { ok: false, reason: "NOT_FOUND" };
@@ -112,7 +124,8 @@ export async function toggleVote(params: { retroId: string; noteId: string; user
   const has = votes.includes(params.noteId);
 
   if (has) {
-    retro.userVotes[params.userId] = votes.filter((v) => v !== params.noteId);
+    // keep vote (no-op)
+    return { ok: true };
   } else {
     if (votes.length >= MAX_VOTES_PER_USER) {
       return { ok: false, reason: "LIMIT" };
@@ -120,6 +133,25 @@ export async function toggleVote(params: { retroId: string; noteId: string; user
     retro.userVotes[params.userId] = [...votes, params.noteId];
   }
 
+  await kv.hset("retros", { [retro.id]: retro });
+  return { ok: true };
+}
+
+export async function setRevealComments(retroId: string, reveal: boolean): Promise<{ ok: boolean; reason?: string }> {
+  const retro = await getRetroById(retroId);
+  if (!retro) return { ok: false, reason: "NOT_FOUND" };
+  retro.revealComments = reveal;
+  await kv.hset("retros", { [retro.id]: retro });
+  return { ok: true };
+}
+
+export async function endRetroEarly(retroId: string): Promise<{ ok: boolean; reason?: string }> {
+  const retro = await getRetroById(retroId);
+  if (!retro) return { ok: false, reason: "NOT_FOUND" };
+  if (!retro.startTime || !retro.durationMinutes) {
+    return { ok: false, reason: "NOT_STARTED" };
+  }
+  retro.endTimeOverride = Date.now();
   await kv.hset("retros", { [retro.id]: retro });
   return { ok: true };
 }
@@ -145,7 +177,8 @@ export function computePhase(retro: Retro, now: number): { phase: Phase; remaini
   if (!retro.startTime || !retro.durationMinutes) {
     return { phase: "planning", remainingMs: null, endTime: null };
   }
-  const endTime = retro.startTime + retro.durationMinutes * 60_000;
+  const computedEndTime = retro.startTime + retro.durationMinutes * 60_000;
+  const endTime = retro.endTimeOverride ?? computedEndTime;
   const remainingMs = Math.max(0, endTime - now);
   const fiveMinutesMs = 5 * 60_000;
   if (remainingMs === 0) {

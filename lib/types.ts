@@ -25,6 +25,8 @@ export interface Retro {
   durationMinutes: number | null;
   startTime: number | null;
   starterUserId: string | null;
+  endTimeOverride?: number | null; // if set, overrides computed end time
+  revealComments?: boolean; // if true, comments are visible even during writing
   notes: Note[];
   userVotes: Record<string, string[]>; // userId -> noteIds
   users: Record<string, UserProfile>; // userId -> UserProfile
