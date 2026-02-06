@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ColumnKey, RetroSnapshot, Note } from "@/lib/types";
 import Timer from "@/components/Timer";
 import NoteCard from "@/components/NoteCard";
@@ -26,6 +26,8 @@ export default function RetroBoard({ initial }: Props) {
   const [userId, setUserId] = useState<string>("");
   const [userProfile, setUserProfile] = useState<{ name: string; avatar: string } | null>(null);
   const [duration, setDuration] = useState<number>(15);
+  const [myNoteTexts, setMyNoteTexts] = useState<Record<string, string>>({});
+
   const remainingVotes = useMemo(() => {
     const used = snapshot.retro.userVotes[userId]?.length ?? 0;
     return Math.max(0, 6 - used);
@@ -76,27 +78,46 @@ export default function RetroBoard({ initial }: Props) {
     };
   }, [snapshot.retro.id]);
 
-  // DERIVE PHASE LOCALLY
+  // DERIVE PHASE LOCALLY — mirrors computePhase from server
   const currentPhase = useMemo(() => {
-    // If we have a server snapshot that says "ideas" (time ended), respect it?
-    // Actually, trust the local calculation based on startTime/duration for immediate updates.
-    // If not started, use server phase (planning)
     if (!snapshot.retro.startTime || !snapshot.retro.durationMinutes) {
       return "planning";
     }
-    const endTime = snapshot.retro.startTime + snapshot.retro.durationMinutes * 60_000;
-    const remainingMs = endTime - now;
+    const computedEndTime = snapshot.retro.startTime + snapshot.retro.durationMinutes * 60_000;
+    const endTime = snapshot.retro.endTimeOverride ?? computedEndTime;
+    const remainingMs = Math.max(0, endTime - now);
+    const fiveMinutesMs = 5 * 60_000;
 
-    // < 0 => ideas
-    if (remainingMs <= 0) return "ideas";
-    // <= 5 min => voting
-    if (remainingMs <= 5 * 60_000) return "voting";
-    // else => writing
+    if (remainingMs === 0) return "ideas";
+    if (snapshot.retro.phaseOverride === "voting") return "voting";
+    if (snapshot.retro.phaseOverride === "writing") return "writing";
+    if (remainingMs <= fiveMinutesMs) return "voting";
     return "writing";
-  }, [snapshot.retro.startTime, snapshot.retro.durationMinutes, now]);
+  }, [snapshot.retro.startTime, snapshot.retro.durationMinutes, snapshot.retro.endTimeOverride, snapshot.retro.phaseOverride, now]);
 
-  const canAddToIdeas = currentPhase === "ideas";
-  const canVote = currentPhase === "voting";
+  // Clear myNoteTexts when leaving writing phase
+  const prevPhaseRef = useRef(currentPhase);
+  useEffect(() => {
+    if (prevPhaseRef.current === "writing" && currentPhase !== "writing") {
+      setMyNoteTexts({});
+    }
+    prevPhaseRef.current = currentPhase;
+  }, [currentPhase]);
+
+  // Processed notes: restore own note texts during writing phase
+  const processedNotes = useMemo(() => {
+    return snapshot.retro.notes.map((n) => {
+      if (n.authorId === userId && n.text === "" && myNoteTexts[n.id]) {
+        return { ...n, text: myNoteTexts[n.id] };
+      }
+      return n;
+    });
+  }, [snapshot.retro.notes, userId, myNoteTexts]);
+
+  const isFinished = snapshot.retro.finished === true;
+  const isStarted = !!snapshot.retro.startTime;
+  const canAddToIdeas = currentPhase === "ideas" && !isFinished;
+  const canVote = currentPhase === "voting" && !isFinished;
   const showBlur = currentPhase === "writing";
 
   const postAction = async (action: string, payload: any) => {
@@ -122,9 +143,12 @@ export default function RetroBoard({ initial }: Props) {
     (column: ColumnKey, text: string) => {
       const t = text.trim();
       if (!t) return;
+      const noteId = generateId();
+      setMyNoteTexts((prev) => ({ ...prev, [noteId]: t }));
       postAction("addNote", {
         column,
         text: t,
+        noteId,
         authorId: userId,
         authorName: userProfile?.name || undefined
       });
@@ -132,33 +156,57 @@ export default function RetroBoard({ initial }: Props) {
     [snapshot.retro.id, userId, userProfile?.name]
   );
 
-  const handleVote = useCallback(
+  const handleAddVote = useCallback(
     (noteId: string) => {
-      postAction("toggleVote", {
-        noteId,
-        userId
-      });
+      postAction("addVote", { noteId, userId });
     },
     [snapshot.retro.id, userId]
   );
 
+  const handleRemoveVote = useCallback(
+    (noteId: string) => {
+      postAction("removeVote", { noteId, userId });
+    },
+    [snapshot.retro.id, userId]
+  );
+
+  const handleAdvanceToVoting = useCallback(() => {
+    postAction("setPhaseOverride", { phase: "voting" });
+  }, [snapshot.retro.id]);
+
+  const handleFinishRetro = useCallback(() => {
+    if (confirm("¿Estás seguro de que quieres finalizar esta retro? Nadie más podrá entrar ni modificarla.")) {
+      postAction("finishRetro", {});
+    }
+  }, [snapshot.retro.id]);
+
+  // Vote counts per note for this user
+  const myVoteCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const userVotes = snapshot.retro.userVotes[userId] || [];
+    for (const noteId of userVotes) {
+      counts[noteId] = (counts[noteId] || 0) + 1;
+    }
+    return counts;
+  }, [snapshot.retro.userVotes, userId]);
+
   const grouped = useMemo(() => {
-    const by: Record<ColumnKey, typeof snapshot.retro.notes> = { good: [], bad: [], ideas: [] };
-    for (const n of snapshot.retro.notes) {
+    const by: Record<ColumnKey, typeof processedNotes> = { good: [], bad: [], ideas: [] };
+    for (const n of processedNotes) {
       by[n.column].push(n);
     }
     const sortByVotes = (a: Note, b: Note) => (snapshot.voteCounts[b.id] || 0) - (snapshot.voteCounts[a.id] || 0);
     const sortByTime = (a: Note, b: Note) => a.createdAt - b.createdAt;
-    const sorter = snapshot.phase === "voting" || snapshot.phase === "ideas" ? sortByVotes : sortByTime;
+    const sorter = currentPhase === "voting" || currentPhase === "ideas" ? sortByVotes : sortByTime;
     by.good.sort(sorter);
     by.bad.sort(sorter);
     by.ideas.sort(sorter);
     return by;
-  }, [snapshot]);
+  }, [processedNotes, snapshot.voteCounts, currentPhase]);
 
   return (
     <div className="flex flex-col gap-4">
-      {(!userProfile || !snapshot.retro.users?.[userId]) && (
+      {(!userProfile || !snapshot.retro.users?.[userId]) && !isFinished && (
         <JoinModal
           retroId={snapshot.retro.id}
           userId={userId}
@@ -171,6 +219,13 @@ export default function RetroBoard({ initial }: Props) {
           }}
         />
       )}
+
+      {isFinished && (
+        <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4 text-center text-yellow-800">
+          <strong>Esta retro ha sido finalizada.</strong> Ya no se pueden añadir notas ni votar.
+        </div>
+      )}
+
       <div className="flex flex-col gap-2 rounded-lg bg-white p-4 shadow">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -217,7 +272,7 @@ export default function RetroBoard({ initial }: Props) {
                   </option>
                 ))}
               </select>
-              {!snapshot.retro.startTime && (
+              {!snapshot.retro.startTime && !isFinished && (
                 <button
                   onClick={handleStart}
                   className="rounded bg-green-600 px-3 py-1.5 font-semibold text-white hover:bg-green-700"
@@ -232,7 +287,7 @@ export default function RetroBoard({ initial }: Props) {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600">Fase</span>
-              <span className="rounded bg-gray-100 px-2 py-1 text-sm font-medium capitalize">{snapshot.phase}</span>
+              <span className="rounded bg-gray-100 px-2 py-1 text-sm font-medium capitalize">{currentPhase}</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600">Votos restantes</span>
@@ -240,6 +295,25 @@ export default function RetroBoard({ initial }: Props) {
             </div>
           </div>
         </div>
+        {/* Action buttons */}
+        {isStarted && !isFinished && (
+          <div className="flex items-center gap-2 border-t border-gray-100 pt-2">
+            {currentPhase === "writing" && (
+              <button
+                onClick={handleAdvanceToVoting}
+                className="rounded bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
+              >
+                Pasar a votación
+              </button>
+            )}
+            <button
+              onClick={handleFinishRetro}
+              className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
+            >
+              Finalizar retro
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -252,9 +326,12 @@ export default function RetroBoard({ initial }: Props) {
           userId={userId}
           userName={userProfile?.name || ""}
           canVote={canVote}
-          canAdd
+          canAdd={!isFinished}
+          myVoteCounts={myVoteCounts}
+          remainingVotes={remainingVotes}
           onAdd={(text) => handleAddNote("good", text)}
-          onVote={handleVote}
+          onAddVote={handleAddVote}
+          onRemoveVote={handleRemoveVote}
         />
         <Column
           title="¿Algo que no ha ido del todo bien?"
@@ -265,9 +342,12 @@ export default function RetroBoard({ initial }: Props) {
           userId={userId}
           userName={userProfile?.name || ""}
           canVote={canVote}
-          canAdd
+          canAdd={!isFinished}
+          myVoteCounts={myVoteCounts}
+          remainingVotes={remainingVotes}
           onAdd={(text) => handleAddNote("bad", text)}
-          onVote={handleVote}
+          onAddVote={handleAddVote}
+          onRemoveVote={handleRemoveVote}
         />
         <Column
           title="¿Tienes alguna idea que puede ser interesante?"
@@ -280,8 +360,11 @@ export default function RetroBoard({ initial }: Props) {
           canVote={false}
           canAdd={canAddToIdeas}
           addDisabledHint={!canAddToIdeas ? "Se habilita al terminar el tiempo" : undefined}
+          myVoteCounts={myVoteCounts}
+          remainingVotes={remainingVotes}
           onAdd={(text) => handleAddNote("ideas", text)}
-          onVote={handleVote}
+          onAddVote={handleAddVote}
+          onRemoveVote={handleRemoveVote}
         />
       </div>
     </div>
@@ -299,8 +382,11 @@ function Column({
   canVote,
   canAdd,
   addDisabledHint,
+  myVoteCounts,
+  remainingVotes,
   onAdd,
-  onVote
+  onAddVote,
+  onRemoveVote
 }: {
   title: string;
   color: "good" | "bad" | "idea";
@@ -312,8 +398,11 @@ function Column({
   canVote: boolean;
   canAdd: boolean;
   addDisabledHint?: string;
+  myVoteCounts: Record<string, number>;
+  remainingVotes: number;
   onAdd: (text: string) => void;
-  onVote: (noteId: string) => void;
+  onAddVote: (noteId: string) => void;
+  onRemoveVote: (noteId: string) => void;
 }) {
   const [text, setText] = useState("");
   const [showGif, setShowGif] = useState(false);
@@ -379,7 +468,10 @@ function Column({
             votes={voteCounts[n.id] || 0}
             canVote={canVote}
             authorName={n.authorName ?? (n.authorId === userId ? (userName || "yo") : "anónimo")}
-            onVote={() => onVote(n.id)}
+            myVotes={myVoteCounts[n.id] || 0}
+            remainingVotes={remainingVotes}
+            onAddVote={() => onAddVote(n.id)}
+            onRemoveVote={() => onRemoveVote(n.id)}
           />
         ))}
         {notes.length === 0 && <div className="text-sm text-gray-400">Sin notas todavía</div>}
@@ -473,4 +565,3 @@ function JoinModal({
     </div>
   );
 }
-

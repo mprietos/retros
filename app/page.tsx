@@ -10,7 +10,9 @@ export default async function HomePage() {
     const todayISO = new Date().toISOString().slice(0, 10);
     const retros = await listRetros();
     const snapshots = (await Promise.all(retros.map((r) => getSnapshot(r.id, now)))).filter(Boolean) as any[];
-    const open = snapshots.filter((s) => s.phase !== "ideas");
+
+    const finished = snapshots.filter((s) => s.retro.finished === true);
+    const open = snapshots.filter((s) => s.phase !== "ideas" && !s.retro.finished);
     const openToday = open.filter((s) => s.retro.dateISO === todayISO);
     const openOtherDays = open.filter((s) => s.retro.dateISO !== todayISO);
 
@@ -99,6 +101,42 @@ export default async function HomePage() {
             </ul>
           </section>
         )}
+
+        {finished.length > 0 && (
+          <section className="rounded-lg bg-white p-4 shadow">
+            <h2 className="mb-1 text-lg font-semibold">Retros finalizadas</h2>
+            <p className="mb-3 text-sm text-gray-600">
+              Estas retros han sido cerradas. Puedes borrarlas para limpiar la lista.
+            </p>
+            <ul className="flex flex-col gap-2">
+              {finished.map((s) => (
+                <li key={s.retro.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-gray-200 p-3">
+                  <div className="flex flex-col">
+                    <span className="font-medium">{s.retro.name}</span>
+                    <span className="text-sm text-gray-600">
+                      Equipo: {s.retro.team} • Fecha: {s.retro.dateISO}
+                    </span>
+                  </div>
+                  <form
+                    action={async (formData) => {
+                      "use server";
+                      const retroId = String(formData.get("retroId") || "");
+                      const { deleteRetro } = await import("@/lib/store");
+                      if (!retroId) return;
+                      await deleteRetro(retroId);
+                      redirect("/");
+                    }}
+                  >
+                    <input type="hidden" name="retroId" value={s.retro.id} />
+                    <button type="submit" className="rounded bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700">
+                      Borrar
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     );
   } catch (error) {
@@ -118,10 +156,14 @@ function EnterExisting() {
       action={async (formData) => {
         "use server";
         const name = String(formData.get("name") || "").toLowerCase();
-        const { getRetroIdByName } = await import("@/lib/store");
+        const { getRetroIdByName, getSnapshot } = await import("@/lib/store");
         const id = await getRetroIdByName(name);
         if (!id) {
           redirect(`/?missing=1`);
+        }
+        const snap = await getSnapshot(id);
+        if (snap?.retro.finished) {
+          redirect(`/?finished=1`);
         }
         redirect(`/retro/${id}`);
       }}
@@ -172,5 +214,3 @@ function CreateNew() {
     </form>
   );
 }
-
-

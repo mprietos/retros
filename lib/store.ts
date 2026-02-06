@@ -59,6 +59,7 @@ export async function createRetro(params: { name?: string; team: string; dateISO
     endTimeOverride: null,
     phaseOverride: null,
     revealComments: false,
+    finished: false,
     notes: [],
 
     userVotes: {},
@@ -133,9 +134,6 @@ export async function addVote(params: { retroId: string; noteId: string; userId:
   if (!noteExists) return { ok: false, reason: "NOT_FOUND" };
 
   const votes = retro.userVotes[params.userId] || [];
-  if (votes.includes(params.noteId)) {
-    return { ok: true };
-  }
   if (votes.length >= MAX_VOTES_PER_USER) {
     return { ok: false, reason: "LIMIT" };
   }
@@ -148,11 +146,13 @@ export async function removeVote(params: { retroId: string; noteId: string; user
   const retro = await getRetroById(params.retroId);
   if (!retro) return { ok: false, reason: "NOT_FOUND" };
 
-  const votes = retro.userVotes[params.userId] || [];
-  if (!votes.includes(params.noteId)) {
+  const votes = [...(retro.userVotes[params.userId] || [])];
+  const idx = votes.indexOf(params.noteId);
+  if (idx === -1) {
     return { ok: true };
   }
-  retro.userVotes[params.userId] = votes.filter((v) => v !== params.noteId);
+  votes.splice(idx, 1);
+  retro.userVotes[params.userId] = votes;
   await kv.hset("retros", { [retro.id]: retro });
   return { ok: true };
 }
@@ -187,6 +187,18 @@ export async function endRetroEarly(retroId: string): Promise<{ ok: boolean; rea
     return { ok: false, reason: "NOT_STARTED" };
   }
   retro.endTimeOverride = Date.now();
+  await kv.hset("retros", { [retro.id]: retro });
+  return { ok: true };
+}
+
+export async function finishRetro(retroId: string): Promise<{ ok: boolean; reason?: string }> {
+  const retro = await getRetroById(retroId);
+  if (!retro) return { ok: false, reason: "NOT_FOUND" };
+  if (retro.finished) return { ok: true };
+  retro.finished = true;
+  if (!retro.endTimeOverride) {
+    retro.endTimeOverride = Date.now();
+  }
   await kv.hset("retros", { [retro.id]: retro });
   return { ok: true };
 }

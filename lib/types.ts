@@ -28,6 +28,7 @@ export interface Retro {
   endTimeOverride?: number | null; // if set, overrides computed end time
   phaseOverride?: Phase | null; // if set, forces phase (e.g. allow voting early)
   revealComments?: boolean; // if true, comments are visible even during writing
+  finished?: boolean; // if true, retro is finalized and no one can enter
   notes: Note[];
   userVotes: Record<string, string[]>; // userId -> noteIds
   users: Record<string, UserProfile>; // userId -> UserProfile

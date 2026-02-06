@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { pusherServer } from "@/lib/pusher";
-import { addNote, addVote, endRetroEarly, getSnapshot, joinRetro, removeVote, setPhaseOverride, setRevealComments, startRetro, toggleVote } from "@/lib/store";
+import { addNote, addVote, endRetroEarly, finishRetro, getSnapshot, joinRetro, removeVote, setPhaseOverride, setRevealComments, startRetro, toggleVote } from "@/lib/store";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { retroId } = req.query;
@@ -84,6 +84,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 const endRes = await endRetroEarly(retroId);
                 if (endRes.ok) snapshot = await getSnapshot(retroId);
                 else error = endRes.reason;
+                break;
+
+            case "finishRetro":
+                const finishRes = await finishRetro(retroId);
+                if (finishRes.ok) snapshot = await getSnapshot(retroId);
+                else error = finishRes.reason;
                 break;
 
             case "joinRetro":
