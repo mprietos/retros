@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listRetros, getSnapshot } from "@/lib/store";
 import { redirect } from "next/navigation";
+import DeleteRetroButton from "@/components/DeleteRetroButton";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export default async function HomePage() {
                 </div>
                 <Link
                   href={`/retro/${s.retro.id}`}
-                  className="rounded bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700"
+                  className="shrink-0 rounded bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700"
                 >
                   Entrar
                 </Link>
@@ -61,40 +62,21 @@ export default async function HomePage() {
             </p>
             <ul className="flex flex-col gap-2">
               {openOtherDays.map((s) => (
-                <li key={s.retro.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-gray-200 p-3">
-                  <div className="flex flex-col">
+                <li key={s.retro.id} className="flex items-center justify-between gap-3 rounded border border-gray-200 p-3">
+                  <div className="min-w-0 flex-1">
                     <span className="font-medium">{s.retro.name}</span>
-                    <span className="text-sm text-gray-600">
+                    <span className="block text-sm text-gray-600">
                       Equipo: {s.retro.team} • Fecha: {s.retro.dateISO} • Fase: <span className="capitalize">{s.phase}</span>
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <Link
                       href={`/retro/${s.retro.id}`}
                       className="rounded bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700"
                     >
                       Entrar
                     </Link>
-                    <form
-                      action={async (formData) => {
-                        "use server";
-                        const retroId = String(formData.get("retroId") || "");
-                        const retroDateISO = String(formData.get("dateISO") || "");
-                        const { deleteRetro } = await import("@/lib/store");
-                        const today = new Date().toISOString().slice(0, 10);
-                        if (!retroId) return;
-                        // Safety: only allow deleting retros from other days
-                        if (retroDateISO === today) return;
-                        await deleteRetro(retroId);
-                        redirect("/");
-                      }}
-                    >
-                      <input type="hidden" name="retroId" value={s.retro.id} />
-                      <input type="hidden" name="dateISO" value={s.retro.dateISO} />
-                      <button type="submit" className="rounded bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700">
-                        Borrar
-                      </button>
-                    </form>
+                    <DeleteRetroButton retroId={s.retro.id} />
                   </div>
                 </li>
               ))}
@@ -110,28 +92,14 @@ export default async function HomePage() {
             </p>
             <ul className="flex flex-col gap-2">
               {finished.map((s) => (
-                <li key={s.retro.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-gray-200 p-3">
-                  <div className="flex flex-col">
+                <li key={s.retro.id} className="flex items-center justify-between gap-3 rounded border border-gray-200 p-3">
+                  <div className="min-w-0 flex-1">
                     <span className="font-medium">{s.retro.name}</span>
-                    <span className="text-sm text-gray-600">
+                    <span className="block text-sm text-gray-600">
                       Equipo: {s.retro.team} • Fecha: {s.retro.dateISO}
                     </span>
                   </div>
-                  <form
-                    action={async (formData) => {
-                      "use server";
-                      const retroId = String(formData.get("retroId") || "");
-                      const { deleteRetro } = await import("@/lib/store");
-                      if (!retroId) return;
-                      await deleteRetro(retroId);
-                      redirect("/");
-                    }}
-                  >
-                    <input type="hidden" name="retroId" value={s.retro.id} />
-                    <button type="submit" className="rounded bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700">
-                      Borrar
-                    </button>
-                  </form>
+                  <DeleteRetroButton retroId={s.retro.id} />
                 </li>
               ))}
             </ul>

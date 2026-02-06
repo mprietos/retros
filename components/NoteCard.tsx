@@ -30,11 +30,15 @@ export default function NoteCard({
   onAddVote?: () => void;
   onRemoveVote?: () => void;
 }) {
-  const displayText = blurred && !text ? "Nota oculta" : text;
   const gifUrl = !blurred ? extractGifUrl(text) : null;
+  // Strip the GIF URL from display text so only the image shows
+  const cleanText = gifUrl ? text.replace(gifUrl, "").trim() : text;
+  const displayText = blurred && !text ? "Nota oculta" : cleanText;
   return (
     <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-      <div className={clsx("text-sm whitespace-pre-wrap", blurred && "blurred select-none", blurred && !text && "italic text-gray-400")}>{displayText}</div>
+      {displayText && (
+        <div className={clsx("text-sm whitespace-pre-wrap", blurred && "blurred select-none", blurred && !text && "italic text-gray-400")}>{displayText}</div>
+      )}
       {gifUrl && (
         <div className="mt-2">
           <Image

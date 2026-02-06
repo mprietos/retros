@@ -4,10 +4,14 @@
 export const AVATARS = [
     // Faces
     "😀", "😄", "😁", "😅", "😂", "😊", "😎", "🤓", "😇", "🥳",
+    "🤩", "😏", "🤗", "🤠", "🥸",
     // Animals
     "🐶", "🐱", "🐼", "🐸", "🦊", "🐵", "🐙", "🦄",
-    // Fun
-    "🌈", "🔥", "⭐", "⚡", "🚀", "🍕"
+    "🐯", "🦁", "🐻", "🐨", "🐰", "🐷", "🐮", "🦋",
+    "🐢", "🦉", "🐺", "🦈", "🐬", "🐧",
+    // Fun / Objects
+    "🌈", "🔥", "⭐", "⚡", "🚀", "🍕",
+    "🎸", "🎮", "🧩", "🎯", "🏀", "🎲",
 ];
 
 export interface Avatar {
@@ -27,6 +31,11 @@ export const AVATAR_LIST: Avatar[] = AVATARS.map(emoji => {
         "🤓": "Friki",
         "😇": "Inocente",
         "🥳": "Fiesta",
+        "🤩": "Estrellitas",
+        "😏": "Pillo",
+        "🤗": "Abrazo",
+        "🤠": "Vaquero",
+        "🥸": "Disfraz",
         "🐶": "Perro",
         "🐱": "Gato",
         "🐼": "Panda",
@@ -35,12 +44,32 @@ export const AVATAR_LIST: Avatar[] = AVATARS.map(emoji => {
         "🐵": "Mono",
         "🐙": "Pulpo",
         "🦄": "Unicornio",
+        "🐯": "Tigre",
+        "🦁": "León",
+        "🐻": "Oso",
+        "🐨": "Koala",
+        "🐰": "Conejo",
+        "🐷": "Cerdo",
+        "🐮": "Vaca",
+        "🦋": "Mariposa",
+        "🐢": "Tortuga",
+        "🦉": "Búho",
+        "🐺": "Lobo",
+        "🦈": "Tiburón",
+        "🐬": "Delfín",
+        "🐧": "Pingüino",
         "🌈": "Arcoíris",
         "🔥": "Fuego",
         "⭐": "Estrella",
         "⚡": "Rayo",
         "🚀": "Cohete",
-        "🍕": "Pizza"
+        "🍕": "Pizza",
+        "🎸": "Guitarra",
+        "🎮": "Mando",
+        "🧩": "Puzzle",
+        "🎯": "Diana",
+        "🏀": "Baloncesto",
+        "🎲": "Dado",
     };
     return { id: emoji, label: labels[emoji] || "Avatar" };
 });
