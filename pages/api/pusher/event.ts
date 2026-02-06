@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { pusherServer } from "@/lib/pusher";
-import { addNote, getSnapshot, startRetro, toggleVote, joinRetro } from "@/lib/store";
+import { addNote, addVote, endRetroEarly, getSnapshot, joinRetro, removeVote, setPhaseOverride, setRevealComments, startRetro, toggleVote } from "@/lib/store";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { retroId } = req.query;
@@ -48,6 +48,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 } else {
                     error = result.reason;
                 }
+                break;
+            case "addVote":
+                const addRes = await addVote({
+                    retroId,
+                    noteId: payload.noteId,
+                    userId: payload.userId
+                });
+                if (addRes.ok) snapshot = await getSnapshot(retroId);
+                else error = addRes.reason;
+                break;
+            case "removeVote":
+                const removeRes = await removeVote({
+                    retroId,
+                    noteId: payload.noteId,
+                    userId: payload.userId
+                });
+                if (removeRes.ok) snapshot = await getSnapshot(retroId);
+                else error = removeRes.reason;
+                break;
+
+            case "setRevealComments":
+                const revealRes = await setRevealComments(retroId, !!payload.reveal);
+                if (revealRes.ok) snapshot = await getSnapshot(retroId);
+                else error = revealRes.reason;
+                break;
+
+            case "setPhaseOverride":
+                const phaseRes = await setPhaseOverride(retroId, payload.phase ?? null);
+                if (phaseRes.ok) snapshot = await getSnapshot(retroId);
+                else error = phaseRes.reason;
+                break;
+
+            case "endRetroEarly":
+                const endRes = await endRetroEarly(retroId);
+                if (endRes.ok) snapshot = await getSnapshot(retroId);
+                else error = endRes.reason;
                 break;
 
             case "joinRetro":

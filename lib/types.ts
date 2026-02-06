@@ -26,6 +26,7 @@ export interface Retro {
   startTime: number | null;
   starterUserId: string | null;
   endTimeOverride?: number | null; // if set, overrides computed end time
+  phaseOverride?: Phase | null; // if set, forces phase (e.g. allow voting early)
   revealComments?: boolean; // if true, comments are visible even during writing
   notes: Note[];
   userVotes: Record<string, string[]>; // userId -> noteIds

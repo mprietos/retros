@@ -5,6 +5,7 @@ import { z } from "zod";
 const Schema = z.object({
   column: z.enum(["good", "bad", "ideas"]),
   text: z.string().min(1),
+  noteId: z.string().min(1).optional(),
   authorId: z.string().min(1),
   authorName: z.string().optional()
 });
@@ -15,17 +16,18 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
-  const note = addNote({
+  const note = await addNote({
     retroId: ctx.params.id,
     column: parsed.data.column,
     text: parsed.data.text,
+    noteId: parsed.data.noteId,
     authorId: parsed.data.authorId,
     authorName: parsed.data.authorName
   });
   if (!note) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  return NextResponse.json(getSnapshot(ctx.params.id));
+  return NextResponse.json(await getSnapshot(ctx.params.id));
 }
 
 

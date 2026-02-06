@@ -57,6 +57,7 @@ export async function createRetro(params: { name?: string; team: string; dateISO
     startTime: null,
     starterUserId: null,
     endTimeOverride: null,
+    phaseOverride: null,
     revealComments: false,
     notes: [],
 
@@ -77,6 +78,7 @@ export async function startRetro(id: string, durationMinutes: number, starterUse
   retro.durationMinutes = durationMinutes;
   retro.starterUserId = starterUserId;
   retro.endTimeOverride = null;
+  retro.phaseOverride = null;
   retro.revealComments = retro.revealComments ?? false;
 
   await kv.hset("retros", { [id]: retro });
@@ -94,14 +96,17 @@ export async function addNote(params: {
   retroId: string;
   column: Note["column"];
   text: string;
+  noteId?: string;
   authorId: string;
   authorName?: string;
 }): Promise<Note | undefined> {
   const retro = await getRetroById(params.retroId);
   if (!retro) return undefined;
 
+  const desiredId = params.noteId && params.noteId.trim();
+  const exists = desiredId ? retro.notes.some((n) => n.id === desiredId) : false;
   const note: Note = {
-    id: randomUUID(),
+    id: desiredId && !exists ? desiredId : randomUUID(),
     retroId: retro.id,
     column: params.column,
     text: params.text,
@@ -115,24 +120,39 @@ export async function addNote(params: {
   return note;
 }
 
-// Vote is idempotent: voting again does NOT remove the vote.
 export async function toggleVote(params: { retroId: string; noteId: string; userId: string }): Promise<{ ok: boolean; reason?: string }> {
+  // Backwards compatibility: toggleVote now behaves like addVote (idempotent).
+  return addVote(params);
+}
+
+export async function addVote(params: { retroId: string; noteId: string; userId: string }): Promise<{ ok: boolean; reason?: string }> {
+  const retro = await getRetroById(params.retroId);
+  if (!retro) return { ok: false, reason: "NOT_FOUND" };
+
+  const noteExists = retro.notes.some((n) => n.id === params.noteId);
+  if (!noteExists) return { ok: false, reason: "NOT_FOUND" };
+
+  const votes = retro.userVotes[params.userId] || [];
+  if (votes.includes(params.noteId)) {
+    return { ok: true };
+  }
+  if (votes.length >= MAX_VOTES_PER_USER) {
+    return { ok: false, reason: "LIMIT" };
+  }
+  retro.userVotes[params.userId] = [...votes, params.noteId];
+  await kv.hset("retros", { [retro.id]: retro });
+  return { ok: true };
+}
+
+export async function removeVote(params: { retroId: string; noteId: string; userId: string }): Promise<{ ok: boolean; reason?: string }> {
   const retro = await getRetroById(params.retroId);
   if (!retro) return { ok: false, reason: "NOT_FOUND" };
 
   const votes = retro.userVotes[params.userId] || [];
-  const has = votes.includes(params.noteId);
-
-  if (has) {
-    // keep vote (no-op)
+  if (!votes.includes(params.noteId)) {
     return { ok: true };
-  } else {
-    if (votes.length >= MAX_VOTES_PER_USER) {
-      return { ok: false, reason: "LIMIT" };
-    }
-    retro.userVotes[params.userId] = [...votes, params.noteId];
   }
-
+  retro.userVotes[params.userId] = votes.filter((v) => v !== params.noteId);
   await kv.hset("retros", { [retro.id]: retro });
   return { ok: true };
 }
@@ -141,6 +161,21 @@ export async function setRevealComments(retroId: string, reveal: boolean): Promi
   const retro = await getRetroById(retroId);
   if (!retro) return { ok: false, reason: "NOT_FOUND" };
   retro.revealComments = reveal;
+  await kv.hset("retros", { [retro.id]: retro });
+  return { ok: true };
+}
+
+export async function setPhaseOverride(retroId: string, phase: Phase | null): Promise<{ ok: boolean; reason?: string }> {
+  const retro = await getRetroById(retroId);
+  if (!retro) return { ok: false, reason: "NOT_FOUND" };
+  if (!retro.startTime || !retro.durationMinutes) {
+    return { ok: false, reason: "NOT_STARTED" };
+  }
+  // Only allow overriding to writing/voting; ideas is derived by endTime.
+  if (phase && phase !== "writing" && phase !== "voting") {
+    return { ok: false, reason: "INVALID" };
+  }
+  retro.phaseOverride = phase;
   await kv.hset("retros", { [retro.id]: retro });
   return { ok: true };
 }
@@ -184,6 +219,12 @@ export function computePhase(retro: Retro, now: number): { phase: Phase; remaini
   if (remainingMs === 0) {
     return { phase: "ideas", remainingMs: 0, endTime };
   }
+  if (retro.phaseOverride === "voting") {
+    return { phase: "voting", remainingMs, endTime };
+  }
+  if (retro.phaseOverride === "writing") {
+    return { phase: "writing", remainingMs, endTime };
+  }
   if (remainingMs <= fiveMinutesMs) {
     return { phase: "voting", remainingMs, endTime };
   }
@@ -208,7 +249,17 @@ export async function getSnapshot(id: string, now = Date.now()): Promise<RetroSn
   if (!retro) return undefined;
   const { phase, remainingMs, endTime } = computePhase(retro, now);
   const voteCounts = getVoteCounts(retro);
-  return { retro, phase, remainingMs, endTime, voteCounts };
+  const shouldRedactNotes = phase === "writing" && !retro.revealComments;
+  const retroForClient: Retro = shouldRedactNotes
+    ? {
+      ...retro,
+      notes: retro.notes.map((n) => ({
+        ...n,
+        text: ""
+      }))
+    }
+    : retro;
+  return { retro: retroForClient, phase, remainingMs, endTime, voteCounts };
 }
 
 
