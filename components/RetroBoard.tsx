@@ -184,7 +184,7 @@ export default function RetroBoard({ initial }: Props) {
             <div className="flex -space-x-2">
               {Object.values(snapshot.retro.users || {}).map((u) => (
                 <div key={u.id} className="group relative">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white bg-gray-100 text-lg shadow-sm">
+                  <div className="emoji flex h-8 w-8 items-center justify-center rounded-full border border-white bg-gray-100 text-lg shadow-sm">
                     {u.avatar}
                   </div>
                   <div className="absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 rounded bg-black px-2 py-1 text-xs text-white group-hover:block whitespace-nowrap z-10">
@@ -436,7 +436,7 @@ function JoinModal({
                   onClick={() => !isTaken && setSelectedAvatar(av.id)}
                   disabled={isTaken}
                   className={`
-                    flex aspect-square items-center justify-center rounded-lg text-2xl transition-all
+                    emoji flex aspect-square items-center justify-center rounded-lg text-2xl transition-all
                     ${isSelected ? "bg-blue-100 ring-2 ring-blue-500 scale-110" : "bg-gray-50 hover:bg-gray-100"}
                     ${isTaken ? "cursor-not-allowed opacity-30 grayscale" : "cursor-pointer"}
                   `}

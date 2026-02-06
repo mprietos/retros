@@ -7,8 +7,12 @@ export const dynamic = "force-dynamic";
 export default async function HomePage() {
   try {
     const now = Date.now();
+    const todayISO = new Date().toISOString().slice(0, 10);
     const retros = await listRetros();
     const snapshots = (await Promise.all(retros.map((r) => getSnapshot(r.id, now)))).filter(Boolean) as any[];
+    const open = snapshots.filter((s) => s.phase !== "ideas");
+    const openToday = open.filter((s) => s.retro.dateISO === todayISO);
+    const openOtherDays = open.filter((s) => s.retro.dateISO !== todayISO);
 
     return (
       <div className="flex flex-col gap-6">
@@ -25,7 +29,7 @@ export default async function HomePage() {
         <section className="rounded-lg bg-white p-4 shadow">
           <h2 className="mb-3 text-lg font-semibold">Retros abiertas</h2>
           <ul className="flex flex-col gap-2">
-            {snapshots.filter((s) => s.phase !== "ideas").map((s) => (
+            {openToday.map((s) => (
               <li key={s.retro.id} className="flex items-center justify-between rounded border border-gray-200 p-3">
                 <div className="flex flex-col">
                   <span className="font-medium">{s.retro.name}</span>
@@ -41,11 +45,52 @@ export default async function HomePage() {
                 </Link>
               </li>
             ))}
-            {snapshots.filter((s) => s.phase !== "ideas").length === 0 && (
+            {openToday.length === 0 && (
               <li className="text-sm text-gray-500">No hay retros abiertas.</li>
             )}
           </ul>
         </section>
+
+        {openOtherDays.length > 0 && (
+          <section className="rounded-lg bg-white p-4 shadow">
+            <h2 className="mb-1 text-lg font-semibold">Retros abiertas (otros días)</h2>
+            <p className="mb-3 text-sm text-gray-600">
+              Puedes borrar retros que se quedaron abiertas de días anteriores.
+            </p>
+            <ul className="flex flex-col gap-2">
+              {openOtherDays.map((s) => (
+                <li key={s.retro.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-gray-200 p-3">
+                  <div className="flex flex-col">
+                    <span className="font-medium">{s.retro.name}</span>
+                    <span className="text-sm text-gray-600">
+                      Equipo: {s.retro.team} • Fecha: {s.retro.dateISO} • Fase: <span className="capitalize">{s.phase}</span>
+                    </span>
+                  </div>
+                  <form
+                    action={async (formData) => {
+                      "use server";
+                      const retroId = String(formData.get("retroId") || "");
+                      const retroDateISO = String(formData.get("dateISO") || "");
+                      const { deleteRetro } = await import("@/lib/store");
+                      const today = new Date().toISOString().slice(0, 10);
+                      if (!retroId) return;
+                      // Safety: only allow deleting "open" retros from other days
+                      if (retroDateISO === today) return;
+                      await deleteRetro(retroId);
+                      redirect("/");
+                    }}
+                  >
+                    <input type="hidden" name="retroId" value={s.retro.id} />
+                    <input type="hidden" name="dateISO" value={s.retro.dateISO} />
+                    <button type="submit" className="rounded bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700">
+                      Borrar
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     );
   } catch (error) {

@@ -1,10 +1,13 @@
+// NOTE:
+// Keep this list to emojis that are widely supported on Windows and avoid ZWJ sequences
+// (e.g. "👨‍🚀") because some environments render them as "�" / missing-glyph diamonds.
 export const AVATARS = [
-    // Space Adventures
-    "�", "�", "👨‍🚀", "�‍🚀", "�", "🤖", "🪐", "🌠", "�️", "☄️",
-    // Superheroes & Villains
-    "🦸‍♂️", "🦸‍♀️", "🦹‍♂️", "🦹‍♀️", "🥷", "⚡️", "💥", "🛡️", "⚔️", "🦾",
-    // Sci-Fi / Fun
-    "🦇", "🕷️", "🐲", "🔮", "🌋"
+    // Faces
+    "😀", "😄", "😁", "😅", "😂", "😊", "😎", "🤓", "😇", "🥳",
+    // Animals
+    "🐶", "🐱", "🐼", "🐸", "🦊", "🐵", "🐙", "🦄",
+    // Fun
+    "🌈", "🔥", "⭐", "⚡", "🚀", "🍕"
 ];
 
 export interface Avatar {
@@ -14,31 +17,30 @@ export interface Avatar {
 
 export const AVATAR_LIST: Avatar[] = AVATARS.map(emoji => {
     const labels: Record<string, string> = {
+        "😀": "Sonrisa",
+        "😄": "Feliz",
+        "😁": "Genial",
+        "😅": "Sudor",
+        "😂": "Risa",
+        "😊": "Amable",
+        "😎": "Guay",
+        "🤓": "Friki",
+        "😇": "Inocente",
+        "🥳": "Fiesta",
+        "🐶": "Perro",
+        "🐱": "Gato",
+        "🐼": "Panda",
+        "🐸": "Rana",
+        "🦊": "Zorro",
+        "🐵": "Mono",
+        "🐙": "Pulpo",
+        "🦄": "Unicornio",
+        "🌈": "Arcoíris",
+        "🔥": "Fuego",
+        "⭐": "Estrella",
+        "⚡": "Rayo",
         "🚀": "Cohete",
-        "🛸": "OVNI",
-        "👨‍🚀": "Astronauta",
-        "👩‍🚀": "Astronauta",
-        "👽": "Alien",
-        "🤖": "Robot",
-        "🪐": "Planeta",
-        "🌠": "Estrella",
-        "🛰️": "Satélite",
-        "☄️": "Cometa",
-        "🦸‍♂️": "Superhéroe",
-        "🦸‍♀️": "Superheroína",
-        "🦹‍♂️": "Villano",
-        "🦹‍♀️": "Villana",
-        "🥷": "Ninja",
-        "⚡️": "Rayo",
-        "💥": "Explosión",
-        "🛡️": "Escudo",
-        "⚔️": "Espadas",
-        "🦾": "Ciborg",
-        "🦇": "Murciélago",
-        "🕷️": "Araña",
-        "🐲": "Dragón",
-        "🔮": "Futuro",
-        "🌋": "Destrucción"
+        "🍕": "Pizza"
     };
     return { id: emoji, label: labels[emoji] || "Avatar" };
 });

@@ -16,6 +16,10 @@ body {
   background: rgb(var(--background));
 }
 
+.emoji {
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", system-ui, sans-serif;
+}
+
 .blurred {
   filter: blur(6px);
 }
