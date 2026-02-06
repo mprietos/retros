@@ -55,7 +55,7 @@ export default async function HomePage() {
           <section className="rounded-lg bg-white p-4 shadow">
             <h2 className="mb-1 text-lg font-semibold">Retros abiertas (otros días)</h2>
             <p className="mb-3 text-sm text-gray-600">
-              Puedes borrar retros que se quedaron abiertas de días anteriores.
+              Puedes entrar igualmente. Si son retros que se quedaron abiertas de días anteriores, también puedes borrarlas.
             </p>
             <ul className="flex flex-col gap-2">
               {openOtherDays.map((s) => (
@@ -66,26 +66,34 @@ export default async function HomePage() {
                       Equipo: {s.retro.team} • Fecha: {s.retro.dateISO} • Fase: <span className="capitalize">{s.phase}</span>
                     </span>
                   </div>
-                  <form
-                    action={async (formData) => {
-                      "use server";
-                      const retroId = String(formData.get("retroId") || "");
-                      const retroDateISO = String(formData.get("dateISO") || "");
-                      const { deleteRetro } = await import("@/lib/store");
-                      const today = new Date().toISOString().slice(0, 10);
-                      if (!retroId) return;
-                      // Safety: only allow deleting "open" retros from other days
-                      if (retroDateISO === today) return;
-                      await deleteRetro(retroId);
-                      redirect("/");
-                    }}
-                  >
-                    <input type="hidden" name="retroId" value={s.retro.id} />
-                    <input type="hidden" name="dateISO" value={s.retro.dateISO} />
-                    <button type="submit" className="rounded bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700">
-                      Borrar
-                    </button>
-                  </form>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/retro/${s.retro.id}`}
+                      className="rounded bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-700"
+                    >
+                      Entrar
+                    </Link>
+                    <form
+                      action={async (formData) => {
+                        "use server";
+                        const retroId = String(formData.get("retroId") || "");
+                        const retroDateISO = String(formData.get("dateISO") || "");
+                        const { deleteRetro } = await import("@/lib/store");
+                        const today = new Date().toISOString().slice(0, 10);
+                        if (!retroId) return;
+                        // Safety: only allow deleting retros from other days
+                        if (retroDateISO === today) return;
+                        await deleteRetro(retroId);
+                        redirect("/");
+                      }}
+                    >
+                      <input type="hidden" name="retroId" value={s.retro.id} />
+                      <input type="hidden" name="dateISO" value={s.retro.dateISO} />
+                      <button type="submit" className="rounded bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700">
+                        Borrar
+                      </button>
+                    </form>
+                  </div>
                 </li>
               ))}
             </ul>
