@@ -11,7 +11,7 @@ export default function DeleteRetroButton({ retroId }: { retroId: string }) {
     if (!confirm("¿Seguro que quieres borrar esta retro? Esta acción no se puede deshacer.")) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/retro/delete`, {
+      const res = await fetch(`/api/retros/delete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ retroId }),
