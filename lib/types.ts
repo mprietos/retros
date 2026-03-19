@@ -16,6 +16,14 @@ export interface UserProfile {
   avatar: string; // emoji character
 }
 
+export interface ActionItem {
+  id: string;
+  text: string;
+  authorId: string;
+  authorName?: string;
+  createdAt: number;
+}
+
 export interface Retro {
   id: string;
   name: string;
@@ -25,23 +33,24 @@ export interface Retro {
   durationMinutes: number | null;
   startTime: number | null;
   starterUserId: string | null;
-  endTimeOverride?: number | null; // if set, overrides computed end time
-  phaseOverride?: Phase | null; // if set, forces phase (e.g. allow voting early)
-  revealComments?: boolean; // if true, comments are visible even during writing
-  finished?: boolean; // if true, retro is finalized and no one can enter
+  endTimeOverride?: number | null;
+  phaseOverride?: Phase | null;
+  revealComments?: boolean;
+  finished?: boolean;
   notes: Note[];
-  userVotes: Record<string, string[]>; // userId -> noteIds
-  users: Record<string, UserProfile>; // userId -> UserProfile
+  actionItems: ActionItem[];
+  userVotes: Record<string, string[]>;
+  users: Record<string, UserProfile>;
 }
 
-export type Phase = "planning" | "writing" | "voting" | "ideas";
+export type Phase = "planning" | "writing" | "voting" | "finished";
 
 export interface RetroSnapshot {
   retro: Retro;
   phase: Phase;
   remainingMs: number | null;
   endTime: number | null;
-  voteCounts: Record<string, number>; // noteId -> votes
+  voteCounts: Record<string, number>;
 }
 
 
