@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { pusherServer } from "@/lib/pusher";
-import { addNote, addVote, endRetroEarly, finishRetro, getSnapshot, joinRetro, removeVote, setPhaseOverride, setRevealComments, startRetro, toggleVote } from "@/lib/store";
+import { addActionItem, addNote, addVote, endRetroEarly, finishRetro, getSnapshot, joinRetro, removeActionItem, removeVote, setPhaseOverride, setRevealComments, startRetro, toggleVote } from "@/lib/store";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { retroId } = req.query;
@@ -20,7 +20,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === "POST") {
         const { action, ...payload } = req.body;
 
-        // Ensure payload has retroId
         payload.retroId = retroId;
 
         let snapshot;
@@ -101,6 +100,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 }
                 break;
 
+            case "addActionItem":
+                const actionRes = await addActionItem({
+                    retroId,
+                    text: payload.text,
+                    authorId: payload.authorId,
+                    authorName: payload.authorName
+                });
+                if (actionRes.ok) snapshot = await getSnapshot(retroId);
+                else error = actionRes.reason;
+                break;
+
+            case "removeActionItem":
+                const removeActionRes = await removeActionItem({
+                    retroId,
+                    actionItemId: payload.actionItemId
+                });
+                if (removeActionRes.ok) snapshot = await getSnapshot(retroId);
+                else error = removeActionRes.reason;
+                break;
+
             default:
                 return res.status(400).json({ error: "Invalid action" });
         }
@@ -110,7 +129,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         if (snapshot) {
-            // Trigger update to all clients subscribed to this retro
             await pusherServer.trigger(retroId, "state", snapshot);
             return res.status(200).json({ success: true, snapshot });
         } else {

@@ -6,7 +6,7 @@ import NoteCard from "@/components/NoteCard";
 import { getPusherClient } from "@/lib/pusher";
 import { AVATAR_LIST } from "@/lib/avatars";
 import TenorGifPicker from "@/components/TenorGifPicker";
-// simple id generator for client
+
 function generateId(): string {
   try {
     const c = (globalThis as unknown as { crypto?: { randomUUID?: () => string } }).crypto;
@@ -27,11 +27,7 @@ export default function RetroBoard({ initial }: Props) {
   const [userProfile, setUserProfile] = useState<{ name: string; avatar: string } | null>(null);
   const [duration, setDuration] = useState<number>(15);
   const [myNoteTexts, setMyNoteTexts] = useState<Record<string, string>>({});
-
-  const remainingVotes = useMemo(() => {
-    const used = snapshot.retro.userVotes[userId]?.length ?? 0;
-    return Math.max(0, 6 - used);
-  }, [snapshot, userId]);
+  const [now, setNow] = useState<number>(() => Date.now());
 
   // user persistence
   useEffect(() => {
@@ -43,7 +39,7 @@ export default function RetroBoard({ initial }: Props) {
     }
     setUserId(storedId);
 
-    const profileKey = "retro_user_profile"; // stores JSON { name, avatar }
+    const profileKey = "retro_user_profile";
     const storedProfile = localStorage.getItem(profileKey);
     if (storedProfile) {
       try {
@@ -56,25 +52,42 @@ export default function RetroBoard({ initial }: Props) {
   }, []);
 
   // timer for UI updates
-  const [now, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
     const i = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(i);
   }, []);
 
-  // pusher subscription
+  // pusher subscription + polling fallback
   useEffect(() => {
-    const pusher = getPusherClient();
-    if (!pusher) return;
+    const retroId = snapshot.retro.id;
 
-    const channel = pusher.subscribe(snapshot.retro.id);
-    channel.bind("state", (s: RetroSnapshot) => {
-      setSnapshot(s);
-    });
+    // Pusher real-time
+    const pusher = getPusherClient();
+    let channel: any = null;
+    if (pusher) {
+      channel = pusher.subscribe(retroId);
+      channel.bind("state", (s: RetroSnapshot) => {
+        setSnapshot(s);
+      });
+    }
+
+    // Polling fallback every 3s (ensures sync even without Pusher)
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/pusher/event?retroId=${retroId}`);
+        if (res.ok) {
+          const s = await res.json();
+          if (s?.retro) setSnapshot(s);
+        }
+      } catch { }
+    }, 3000);
 
     return () => {
-      channel.unbind("state");
-      pusher.unsubscribe(snapshot.retro.id);
+      clearInterval(poll);
+      if (channel) {
+        channel.unbind("state");
+        pusher?.unsubscribe(retroId);
+      }
     };
   }, [snapshot.retro.id]);
 
@@ -83,17 +96,22 @@ export default function RetroBoard({ initial }: Props) {
     if (!snapshot.retro.startTime || !snapshot.retro.durationMinutes) {
       return "planning";
     }
+
+    if (snapshot.retro.finished) {
+      return "finished";
+    }
+
     const computedEndTime = snapshot.retro.startTime + snapshot.retro.durationMinutes * 60_000;
     const endTime = snapshot.retro.endTimeOverride ?? computedEndTime;
     const remainingMs = Math.max(0, endTime - now);
     const fiveMinutesMs = 5 * 60_000;
 
-    if (remainingMs === 0) return "ideas";
+    if (remainingMs === 0) return "finished";
     if (snapshot.retro.phaseOverride === "voting") return "voting";
     if (snapshot.retro.phaseOverride === "writing") return "writing";
     if (remainingMs <= fiveMinutesMs) return "voting";
     return "writing";
-  }, [snapshot.retro.startTime, snapshot.retro.durationMinutes, snapshot.retro.endTimeOverride, snapshot.retro.phaseOverride, now]);
+  }, [snapshot.retro.startTime, snapshot.retro.durationMinutes, snapshot.retro.endTimeOverride, snapshot.retro.phaseOverride, snapshot.retro.finished, now]);
 
   // Clear myNoteTexts when leaving writing phase
   const prevPhaseRef = useRef(currentPhase);
@@ -104,7 +122,6 @@ export default function RetroBoard({ initial }: Props) {
     prevPhaseRef.current = currentPhase;
   }, [currentPhase]);
 
-  // Processed notes: restore own note texts during writing phase
   const processedNotes = useMemo(() => {
     return snapshot.retro.notes.map((n) => {
       if (n.authorId === userId && n.text === "" && myNoteTexts[n.id]) {
@@ -114,73 +131,11 @@ export default function RetroBoard({ initial }: Props) {
     });
   }, [snapshot.retro.notes, userId, myNoteTexts]);
 
-  const isFinished = snapshot.retro.finished === true;
-  const isStarted = !!snapshot.retro.startTime;
-  const canAddToIdeas = currentPhase === "ideas" && !isFinished;
-  const canVote = currentPhase === "voting" && !isFinished;
-  const showBlur = currentPhase === "writing";
+  const remainingVotes = useMemo(() => {
+    const used = snapshot.retro.userVotes[userId]?.length ?? 0;
+    return Math.max(0, 6 - used);
+  }, [snapshot, userId]);
 
-  const postAction = async (action: string, payload: any) => {
-    try {
-      await fetch(`/api/pusher/event?retroId=${snapshot.retro.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...payload })
-      });
-    } catch (e) {
-      console.error("Error posting action", e);
-    }
-  };
-
-  const handleStart = useCallback(() => {
-    postAction("startRetro", {
-      durationMinutes: duration,
-      starterUserId: userId
-    });
-  }, [snapshot.retro.id, duration, userId]);
-
-  const handleAddNote = useCallback(
-    (column: ColumnKey, text: string) => {
-      const t = text.trim();
-      if (!t) return;
-      const noteId = generateId();
-      setMyNoteTexts((prev) => ({ ...prev, [noteId]: t }));
-      postAction("addNote", {
-        column,
-        text: t,
-        noteId,
-        authorId: userId,
-        authorName: userProfile?.name || undefined
-      });
-    },
-    [snapshot.retro.id, userId, userProfile?.name]
-  );
-
-  const handleAddVote = useCallback(
-    (noteId: string) => {
-      postAction("addVote", { noteId, userId });
-    },
-    [snapshot.retro.id, userId]
-  );
-
-  const handleRemoveVote = useCallback(
-    (noteId: string) => {
-      postAction("removeVote", { noteId, userId });
-    },
-    [snapshot.retro.id, userId]
-  );
-
-  const handleAdvanceToVoting = useCallback(() => {
-    postAction("setPhaseOverride", { phase: "voting" });
-  }, [snapshot.retro.id]);
-
-  const handleFinishRetro = useCallback(() => {
-    if (confirm("¿Estás seguro de que quieres finalizar esta retro? Nadie más podrá entrar ni modificarla.")) {
-      postAction("finishRetro", {});
-    }
-  }, [snapshot.retro.id]);
-
-  // Vote counts per note for this user
   const myVoteCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     const userVotes = snapshot.retro.userVotes[userId] || [];
@@ -197,16 +152,102 @@ export default function RetroBoard({ initial }: Props) {
     }
     const sortByVotes = (a: Note, b: Note) => (snapshot.voteCounts[b.id] || 0) - (snapshot.voteCounts[a.id] || 0);
     const sortByTime = (a: Note, b: Note) => a.createdAt - b.createdAt;
-    const sorter = currentPhase === "voting" || currentPhase === "ideas" ? sortByVotes : sortByTime;
+    const sorter = currentPhase === "voting" || currentPhase === "finished" ? sortByVotes : sortByTime;
     by.good.sort(sorter);
     by.bad.sort(sorter);
     by.ideas.sort(sorter);
     return by;
   }, [processedNotes, snapshot.voteCounts, currentPhase]);
 
+  const isFinished = currentPhase === "finished";
+  const isStarted = !!snapshot.retro.startTime;
+  const isOwner = !snapshot.retro.starterUserId || snapshot.retro.starterUserId === userId;
+  const canVote = currentPhase === "voting";
+  const showBlur = currentPhase === "writing";
+
+  const postAction = useCallback(async (action: string, payload: any) => {
+    try {
+      const res = await fetch(`/api/pusher/event?retroId=${snapshot.retro.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...payload })
+      });
+      // Use response snapshot as fallback if Pusher doesn't deliver
+      if (res.ok) {
+        const data = await res.json();
+        if (data.snapshot) {
+          setSnapshot(data.snapshot);
+        }
+      }
+    } catch (e) {
+      console.error("Error posting action", e);
+    }
+  }, [snapshot.retro.id]);
+
+  const handleStart = useCallback(() => {
+    postAction("startRetro", { durationMinutes: duration, starterUserId: userId });
+  }, [postAction, duration, userId]);
+
+  const handleAddNote = useCallback(
+    (column: ColumnKey, text: string) => {
+      const t = text.trim();
+      if (!t) return;
+      const noteId = generateId();
+      setMyNoteTexts((prev) => ({ ...prev, [noteId]: t }));
+      postAction("addNote", { column, text: t, noteId, authorId: userId, authorName: userProfile?.name || undefined });
+    },
+    [postAction, userId, userProfile?.name]
+  );
+
+  const handleAddVote = useCallback(
+    (noteId: string) => { postAction("addVote", { noteId, userId }); },
+    [postAction, userId]
+  );
+
+  const handleRemoveVote = useCallback(
+    (noteId: string) => { postAction("removeVote", { noteId, userId }); },
+    [postAction, userId]
+  );
+
+  const handleAdvanceToVoting = useCallback(() => {
+    postAction("setPhaseOverride", { phase: "voting" });
+  }, [postAction]);
+
+  const handleEndRetro = useCallback(() => {
+    postAction("endRetroEarly", {});
+  }, [postAction]);
+
+  const handleFinishRetro = useCallback(() => {
+    if (confirm("¿Estás seguro de que quieres finalizar esta retro? Ya no se podrá modificar.")) {
+      postAction("finishRetro", {});
+    }
+  }, [postAction]);
+
+  const handleRemoveActionItem = useCallback(
+    (actionItemId: string) => { postAction("removeActionItem", { actionItemId }); },
+    [postAction]
+  );
+
+  const phaseLabel: Record<string, string> = {
+    planning: "Planificando",
+    writing: "Escribiendo",
+    voting: "Votaciones",
+    finished: "Finalizada"
+  };
+
+  const phaseColor: Record<string, string> = {
+    planning: "bg-gray-100 text-gray-700",
+    writing: "bg-blue-100 text-blue-800",
+    voting: "bg-amber-100 text-amber-800",
+    finished: "bg-green-100 text-green-800"
+  };
+
+  const actionItems = snapshot.retro.actionItems || [];
+  const canAddActionItems = isFinished && actionItems.length < 2;
+
   return (
     <div className="flex flex-col gap-4">
-      {(!userProfile || !snapshot.retro.users?.[userId]) && !isFinished && (
+      {(!userProfile || !snapshot.retro.users?.[userId]) && !snapshot.retro.finished && (
         <JoinModal
           retroId={snapshot.retro.id}
           userId={userId}
@@ -214,16 +255,9 @@ export default function RetroBoard({ initial }: Props) {
           onJoin={(profile) => {
             setUserProfile(profile);
             localStorage.setItem("retro_user_profile", JSON.stringify(profile));
-            // trigger server join
             postAction("joinRetro", { userProfile: { ...profile, id: userId } });
           }}
         />
-      )}
-
-      {isFinished && (
-        <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4 text-center text-yellow-800">
-          <strong>Esta retro ha sido finalizada.</strong> Ya no se pueden añadir notas ni votar.
-        </div>
       )}
 
       <div className="flex flex-col gap-2 rounded-lg bg-white p-4 shadow">
@@ -235,7 +269,6 @@ export default function RetroBoard({ initial }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {/* Connected Users */}
             <div className="flex -space-x-2">
               {Object.values(snapshot.retro.users || {}).map((u) => (
                 <div key={u.id} className="group relative">
@@ -272,7 +305,7 @@ export default function RetroBoard({ initial }: Props) {
                   </option>
                 ))}
               </select>
-              {!snapshot.retro.startTime && !isFinished && (
+              {!snapshot.retro.startTime && !isFinished && isOwner && (
                 <button
                   onClick={handleStart}
                   className="rounded bg-green-600 px-3 py-1.5 font-semibold text-white hover:bg-green-700"
@@ -287,16 +320,19 @@ export default function RetroBoard({ initial }: Props) {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600">Fase</span>
-              <span className="rounded bg-gray-100 px-2 py-1 text-sm font-medium capitalize">{currentPhase}</span>
+              <span className={`rounded px-2 py-1 text-sm font-medium ${phaseColor[currentPhase] || ""}`}>
+                {phaseLabel[currentPhase] || currentPhase}
+              </span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">Votos restantes</span>
-              <span className="rounded bg-blue-100 px-2 py-1 text-sm font-bold text-blue-800">{remainingVotes}</span>
-            </div>
+            {!isFinished && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">Votos restantes</span>
+                <span className="rounded bg-blue-100 px-2 py-1 text-sm font-bold text-blue-800">{remainingVotes}</span>
+              </div>
+            )}
           </div>
         </div>
-        {/* Action buttons */}
-        {isStarted && !isFinished && (
+        {isStarted && !isFinished && isOwner && (
           <div className="flex items-center gap-2 border-t border-gray-100 pt-2">
             {currentPhase === "writing" && (
               <button
@@ -304,6 +340,14 @@ export default function RetroBoard({ initial }: Props) {
                 className="rounded bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
               >
                 Pasar a votación
+              </button>
+            )}
+            {currentPhase === "voting" && (
+              <button
+                onClick={handleEndRetro}
+                className="rounded bg-orange-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-orange-600"
+              >
+                Terminar votación
               </button>
             )}
             <button
@@ -326,7 +370,7 @@ export default function RetroBoard({ initial }: Props) {
           userId={userId}
           userName={userProfile?.name || ""}
           canVote={canVote}
-          canAdd={!isFinished}
+          canAdd={!isFinished && currentPhase !== "voting"}
           myVoteCounts={myVoteCounts}
           remainingVotes={remainingVotes}
           onAdd={(text) => handleAddNote("good", text)}
@@ -342,7 +386,7 @@ export default function RetroBoard({ initial }: Props) {
           userId={userId}
           userName={userProfile?.name || ""}
           canVote={canVote}
-          canAdd={!isFinished}
+          canAdd={!isFinished && currentPhase !== "voting"}
           myVoteCounts={myVoteCounts}
           remainingVotes={remainingVotes}
           onAdd={(text) => handleAddNote("bad", text)}
@@ -358,8 +402,7 @@ export default function RetroBoard({ initial }: Props) {
           userId={userId}
           userName={userProfile?.name || ""}
           canVote={false}
-          canAdd={canAddToIdeas}
-          addDisabledHint={!canAddToIdeas ? "Se habilita al terminar el tiempo" : undefined}
+          canAdd={!isFinished}
           myVoteCounts={myVoteCounts}
           remainingVotes={remainingVotes}
           onAdd={(text) => handleAddNote("ideas", text)}
@@ -367,6 +410,139 @@ export default function RetroBoard({ initial }: Props) {
           onRemoveVote={handleRemoveVote}
         />
       </div>
+
+      {isFinished && (
+        <ActionItemsSection
+          retroId={snapshot.retro.id}
+          actionItems={actionItems}
+          notes={snapshot.retro.notes}
+          isOwner={isOwner}
+          onGenerated={() => {
+            fetch(`/api/pusher/event?retroId=${snapshot.retro.id}`)
+              .then(r => r.json())
+              .then(s => { if (s?.retro) setSnapshot(s); })
+              .catch(() => {});
+          }}
+          onRemove={handleRemoveActionItem}
+        />
+      )}
+    </div>
+  );
+}
+
+function ActionItemsSection({
+  retroId,
+  actionItems,
+  notes,
+  isOwner,
+  onGenerated,
+  onRemove
+}: {
+  retroId: string;
+  actionItems: Array<{ id: string; text: string; authorName?: string }>;
+  notes: Array<{ column: string; text: string }>;
+  isOwner: boolean;
+  onGenerated: () => void;
+  onRemove: (id: string) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/retros/generate-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ retroId })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Error generando acciones");
+        return;
+      }
+      onGenerated();
+    } catch {
+      setError("Error de conexión");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border-2 border-green-200 bg-green-50 p-6 shadow">
+      <h2 className="mb-1 text-xl font-bold text-green-800">Acciones de mejora</h2>
+      <p className="mb-4 text-sm text-green-600">
+        {actionItems.length > 0
+          ? "Acciones generadas por IA basadas en los comentarios de la retro."
+          : isOwner
+            ? "Genera 2 acciones concretas basadas en los comentarios de la retro usando IA."
+            : "El facilitador puede generar acciones de mejora con IA."}
+      </p>
+
+      {actionItems.length > 0 && (
+        <div className="mb-4 flex flex-col gap-3">
+          {actionItems.map((item, idx) => (
+            <div key={item.id} className="flex items-start gap-3 rounded-lg bg-white p-4 shadow-sm">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-600 text-sm font-bold text-white">
+                {idx + 1}
+              </span>
+              <p className="flex-1 text-gray-900">{item.text}</p>
+              {isOwner && (
+                <button
+                  onClick={() => onRemove(item.id)}
+                  className="shrink-0 rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-700"
+                >
+                  Eliminar
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isOwner && actionItems.length === 0 && (
+        <button
+          onClick={handleGenerate}
+          disabled={loading || notes.length === 0}
+          className="rounded-lg bg-green-600 px-5 py-2.5 font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+        >
+          {loading ? (
+            <span className="inline-flex items-center gap-2">
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Generando con IA...
+            </span>
+          ) : (
+            "Generar acciones de mejora con IA"
+          )}
+        </button>
+      )}
+
+      {isOwner && actionItems.length > 0 && (
+        <button
+          onClick={handleGenerate}
+          disabled={loading}
+          className="rounded-lg border border-green-300 bg-white px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+        >
+          {loading ? (
+            <span className="inline-flex items-center gap-2">
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Regenerando...
+            </span>
+          ) : (
+            "Regenerar acciones"
+          )}
+        </button>
+      )}
+
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );
 }
@@ -499,7 +675,6 @@ function JoinModal({
 
   const handleJoin = async () => {
     if (!name.trim() || !selectedAvatar) return;
-    // optimistic local check
     if (takenAvatars.has(selectedAvatar)) {
       setError("Este avatar ya está en uso, elige otro.");
       return;

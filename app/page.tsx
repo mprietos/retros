@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listRetros, getSnapshot } from "@/lib/store";
 import { redirect } from "next/navigation";
 import DeleteRetroButton from "@/components/DeleteRetroButton";
+import SubmitButton from "@/components/SubmitButton";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export default async function HomePage() {
     const snapshots = (await Promise.all(retros.map((r) => getSnapshot(r.id, now)))).filter(Boolean) as any[];
 
     const finished = snapshots.filter((s) => s.retro.finished === true);
-    const open = snapshots.filter((s) => s.phase !== "ideas" && !s.retro.finished);
+    const open = snapshots.filter((s) => s.phase !== "finished" && !s.retro.finished);
     const openToday = open.filter((s) => s.retro.dateISO === todayISO);
     const openOtherDays = open.filter((s) => s.retro.dateISO !== todayISO);
 
@@ -88,7 +89,7 @@ export default async function HomePage() {
           <section className="rounded-lg bg-white p-4 shadow">
             <h2 className="mb-1 text-lg font-semibold">Retros finalizadas</h2>
             <p className="mb-3 text-sm text-gray-600">
-              Estas retros han sido cerradas. Puedes borrarlas para limpiar la lista.
+              Puedes ver las acciones de mejora o borrarlas para limpiar la lista.
             </p>
             <ul className="flex flex-col gap-2">
               {finished.map((s) => (
@@ -97,9 +98,20 @@ export default async function HomePage() {
                     <span className="font-medium">{s.retro.name}</span>
                     <span className="block text-sm text-gray-600">
                       Equipo: {s.retro.team} • Fecha: {s.retro.dateISO}
+                      {s.retro.actionItems?.length > 0 && (
+                        <> • {s.retro.actionItems.length} acción(es) de mejora</>
+                      )}
                     </span>
                   </div>
-                  <DeleteRetroButton retroId={s.retro.id} />
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Link
+                      href={`/retro/${s.retro.id}`}
+                      className="rounded bg-green-600 px-3 py-1.5 font-medium text-white hover:bg-green-700"
+                    >
+                      Ver
+                    </Link>
+                    <DeleteRetroButton retroId={s.retro.id} />
+                  </div>
                 </li>
               ))}
             </ul>
@@ -124,14 +136,10 @@ function EnterExisting() {
       action={async (formData) => {
         "use server";
         const name = String(formData.get("name") || "").toLowerCase();
-        const { getRetroIdByName, getSnapshot } = await import("@/lib/store");
+        const { getRetroIdByName } = await import("@/lib/store");
         const id = await getRetroIdByName(name);
         if (!id) {
           redirect(`/?missing=1`);
-        }
-        const snap = await getSnapshot(id);
-        if (snap?.retro.finished) {
-          redirect(`/?finished=1`);
         }
         redirect(`/retro/${id}`);
       }}
@@ -147,9 +155,7 @@ function EnterExisting() {
         className="rounded border border-gray-300 px-3 py-2"
       />
 
-      <button type="submit" className="mt-2 w-fit rounded bg-gray-900 px-3 py-2 text-white">
-        Entrar
-      </button>
+      <SubmitButton label="Entrar" className="mt-2 w-fit rounded bg-gray-900 px-3 py-2 text-white disabled:opacity-50" />
     </form>
   );
 }
@@ -176,9 +182,7 @@ function CreateNew() {
       <label className="text-sm text-gray-700" htmlFor="retroCustomName">Nombre (opcional)</label>
       <input id="retroCustomName" name="name" placeholder="Por defecto: equipo-fecha" className="rounded border border-gray-300 px-3 py-2" />
 
-      <button type="submit" className="mt-2 w-fit rounded bg-green-600 px-3 py-2 text-white">
-        Crear
-      </button>
+      <SubmitButton label="Crear" className="mt-2 w-fit rounded bg-green-600 px-3 py-2 text-white disabled:opacity-50" />
     </form>
   );
 }
